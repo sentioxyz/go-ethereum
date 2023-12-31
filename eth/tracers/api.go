@@ -1074,6 +1074,10 @@ type StateContext struct {
 	TransactionIndex int                    `json:"transactionIndex"`
 }
 
+type FailedTrace struct {
+	Failed string `json:"failed,omitempty"`
+}
+
 func (api *API) TraceCallMany(ctx context.Context, bundles []*Bundle, simulateContext *StateContext, config *TraceCallConfig) (interface{}, error) {
 	if len(bundles) == 0 {
 		return nil, errors.New("empty bundles")
@@ -1082,6 +1086,12 @@ func (api *API) TraceCallMany(ctx context.Context, bundles []*Bundle, simulateCo
 	for _, bundle := range bundles {
 		r, err := api.traceBundle(ctx, bundle, simulateContext, config)
 		if err != nil {
+			if r != nil {
+				// return partial results
+				r = append(r, &FailedTrace{Failed: err.Error()})
+				result = append(result, r)
+				return result, nil
+			}
 			return nil, err
 		}
 		result = append(result, r)
@@ -1089,7 +1099,7 @@ func (api *API) TraceCallMany(ctx context.Context, bundles []*Bundle, simulateCo
 	return result, nil
 }
 
-func (api *API) traceBundle(ctx context.Context, bundle *Bundle, simulateContext *StateContext, config *TraceCallConfig) (interface{}, error) {
+func (api *API) traceBundle(ctx context.Context, bundle *Bundle, simulateContext *StateContext, config *TraceCallConfig) ([]interface{}, error) {
 	var result []interface{}
 	// Try to retrieve the specified block
 	var (
@@ -1145,7 +1155,7 @@ func (api *API) traceBundle(ctx context.Context, bundle *Bundle, simulateContext
 		}
 		msg, err := args.ToMessage(api.backend.RPCGasCap(), block.BaseFee())
 		if err != nil {
-			return nil, err
+			return result, err
 		}
 
 		var traceConfig *TraceConfig
@@ -1159,7 +1169,7 @@ func (api *API) traceBundle(ctx context.Context, bundle *Bundle, simulateContext
 		}
 		r, err := api.traceTx(ctx, msg, txctx, vmctx, statedb, traceConfig)
 		if err != nil {
-			return nil, err
+			return result, err
 		}
 		result = append(result, r)
 		statedb.Finalise(is158)
