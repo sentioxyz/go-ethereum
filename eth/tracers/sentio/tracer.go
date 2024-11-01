@@ -85,11 +85,11 @@ type Trace struct {
 	Revertal string        `json:"revertReason,omitempty"`
 
 	// Used by jump
-	InputStack   []uint256.Int `json:"inputStack,omitempty"`
-	InputMemory  *[]string     `json:"inputMemory,omitempty"`
-	OutputStack  []uint256.Int `json:"outputStack,omitempty"`
-	OutputMemory *[]string     `json:"outputMemory,omitempty"`
-	FunctionPc   uint64        `json:"functionPc,omitempty"`
+	InputStack   []string  `json:"inputStack,omitempty"`
+	InputMemory  *[]string `json:"inputMemory,omitempty"`
+	OutputStack  []string  `json:"outputStack,omitempty"`
+	OutputMemory *[]string `json:"outputMemory,omitempty"`
+	FunctionPc   uint64    `json:"functionPc,omitempty"`
 
 	// Used by log
 	Address     *common.Address `json:"address,omitempty"`
@@ -664,14 +664,14 @@ func formatMemory(m *vm.Memory) *[]string {
 	return &res
 }
 
-func copyStack(s *vm.Stack, copySize int) []uint256.Int {
+func copyStack(s *vm.Stack, copySize int) []string {
 	if copySize == 0 {
 		return nil
 	}
 	stackSize := len(s.Data())
-	res := make([]uint256.Int, stackSize)
+	res := make([]string, stackSize)
 	for i := stackSize - copySize; i < stackSize; i++ {
-		res[i] = s.Data()[i]
+		res[i] = s.Data()[i].Hex()
 	}
 	return res
 }
