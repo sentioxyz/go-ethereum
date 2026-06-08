@@ -196,6 +196,22 @@ func NewEVM(blockCtx BlockContext, statedb StateDB, chainConfig *params.ChainCon
 		}
 	}
 	evm.Config.ExtraEips = extraEips
+	if evm.Config.IgnoreGas {
+		evm.table = copyJumpTable(evm.table)
+		for i, op := range evm.table {
+			opCode := OpCode(i)
+			// retain call costs to prevent call stack from going too deep
+			// some contracts use a loop to burn gas
+			// if all codes in the loop have zero cost, it will run forever
+			if opCode == CALL || opCode == STATICCALL || opCode == CALLCODE || opCode == DELEGATECALL || opCode == GAS {
+				continue
+			}
+			op.constantGas = 0
+			op.dynamicGas = func(*EVM, *Contract, *Stack, *Memory, uint64) (GasCosts, error) {
+				return GasCosts{}, nil
+			}
+		}
+	}
 	return evm
 }
 
@@ -481,6 +497,14 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 
 // create creates a new contract using code as deployment code.
 func (evm *EVM) create(caller common.Address, code []byte, gas GasBudget, value *uint256.Int, address common.Address, typ OpCode) (ret []byte, createAddress common.Address, leftOverGas GasBudget, err error) {
+	if evm.Config.CreateAddressOverride != nil {
+		address = *evm.Config.CreateAddressOverride
+	}
+	if evm.Config.CreationCodeOverrides != nil {
+		if override, ok := evm.Config.CreationCodeOverrides[address]; ok {
+			code = override
+		}
+	}
 	if evm.Config.Tracer != nil {
 		evm.captureBegin(evm.depth, typ, caller, address, code, gas.RegularGas, value.ToBig())
 		defer func(startGas uint64) {
@@ -525,14 +549,16 @@ func (evm *EVM) create(caller common.Address, code []byte, gas GasBudget, value 
 	// - the code is non-empty
 	// - the storage is non-empty
 	contractHash := evm.StateDB.GetCodeHash(address)
-	if evm.StateDB.GetNonce(address) != 0 ||
-		(contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash) || // non-empty code
-		isEIP7610RejectedAccount(evm.ChainConfig().ChainID, address, evm.chainRules.IsEIP158) {
-		if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
-			evm.Config.Tracer.OnGasChange(gas.RegularGas, 0, tracing.GasChangeCallFailedExecution)
+	if evm.Config.CreateAddressOverride == nil {
+		if evm.StateDB.GetNonce(address) != 0 ||
+			(contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash) || // non-empty code
+			isEIP7610RejectedAccount(evm.ChainConfig().ChainID, address, evm.chainRules.IsEIP158) {
+			if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
+				evm.Config.Tracer.OnGasChange(gas.RegularGas, 0, tracing.GasChangeCallFailedExecution)
+			}
+			gas.Exhaust()
+			return nil, common.Address{}, gas, ErrContractAddressCollision
 		}
-		gas.Exhaust()
-		return nil, common.Address{}, gas, ErrContractAddressCollision
 	}
 	// Create a new account on the state only if the object was not present.
 	// It might be possible the contract code is deployed to a pre-existent
@@ -591,9 +617,11 @@ func (evm *EVM) initNewContract(contract *Contract, address common.Address) ([]b
 		return ret, err
 	}
 
-	// Check whether the max code size has been exceeded, assign err if the case.
-	if err := CheckMaxCodeSize(&evm.chainRules, uint64(len(ret))); err != nil {
-		return ret, err
+	if !evm.Config.IgnoreGas {
+		// Check whether the max code size has been exceeded, assign err if the case.
+		if err := CheckMaxCodeSize(&evm.chainRules, uint64(len(ret))); err != nil {
+			return ret, err
+		}
 	}
 
 	// Reject code starting with 0xEF if EIP-3541 is enabled.
@@ -603,6 +631,9 @@ func (evm *EVM) initNewContract(contract *Contract, address common.Address) ([]b
 
 	if !evm.chainRules.IsEIP4762 {
 		createDataGas := uint64(len(ret)) * params.CreateDataGas
+		if evm.Config.IgnoreGas {
+			createDataGas = 0
+		}
 		if !contract.UseGas(GasCosts{RegularGas: createDataGas}, evm.Config.Tracer, tracing.GasChangeCallCodeStorage) {
 			return ret, ErrCodeStoreOutOfGas
 		}
@@ -705,5 +736,6 @@ func (evm *EVM) GetVMContext() *tracing.VMContext {
 		Random:      evm.Context.Random,
 		BaseFee:     evm.Context.BaseFee,
 		StateDB:     evm.StateDB,
+		GasPrice:    evm.GasPrice.ToBig(),
 	}
 }

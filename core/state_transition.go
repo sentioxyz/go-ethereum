@@ -559,24 +559,26 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 	)
 	// Check clauses 4-5, subtract intrinsic gas if everything is correct
 	cost, err := IntrinsicGas(msg.Data, msg.AccessList, msg.SetCodeAuthorizations, contractCreation, rules.IsHomestead, rules.IsIstanbul, rules.IsShanghai, rules.IsAmsterdam)
-	if err != nil {
-		return nil, err
-	}
-	prior, sufficient := st.gasRemaining.Charge(cost)
-	if !sufficient {
-		return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gasRemaining.RegularGas, cost.RegularGas)
-	}
-	if t := st.evm.Config.Tracer; t != nil && t.OnGasChange != nil {
-		t.OnGasChange(prior, st.gasRemaining.RegularGas, tracing.GasChangeTxIntrinsicGas)
-	}
-	// Gas limit suffices for the floor data cost (EIP-7623)
-	if rules.IsPrague {
-		floorDataGas, err = FloorDataGas(rules, msg.Data, msg.AccessList)
+	if !st.evm.Config.IgnoreGas {
 		if err != nil {
 			return nil, err
 		}
-		if msg.GasLimit < floorDataGas {
-			return nil, fmt.Errorf("%w: have %d, want %d", ErrFloorDataGas, msg.GasLimit, floorDataGas)
+		prior, sufficient := st.gasRemaining.Charge(cost)
+		if !sufficient {
+			return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gasRemaining.RegularGas, cost.RegularGas)
+		}
+		if t := st.evm.Config.Tracer; t != nil && t.OnGasChange != nil {
+			t.OnGasChange(prior, st.gasRemaining.RegularGas, tracing.GasChangeTxIntrinsicGas)
+		}
+		// Gas limit suffices for the floor data cost (EIP-7623)
+		if rules.IsPrague {
+			floorDataGas, err = FloorDataGas(rules, msg.Data, msg.AccessList)
+			if err != nil {
+				return nil, err
+			}
+			if msg.GasLimit < floorDataGas {
+				return nil, fmt.Errorf("%w: have %d, want %d", ErrFloorDataGas, msg.GasLimit, floorDataGas)
+			}
 		}
 	}
 
@@ -597,10 +599,12 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 		return nil, fmt.Errorf("%w: address %v", ErrInsufficientFundsForTransfer, msg.From.Hex())
 	}
 
-	// Check whether the init code size has been exceeded.
-	if contractCreation {
-		if err := vm.CheckMaxInitCodeSize(&rules, uint64(len(msg.Data))); err != nil {
-			return nil, err
+	if !st.evm.Config.IgnoreCodeSizeLimit {
+		// Check whether the init code size has been exceeded.
+		if contractCreation {
+			if err := vm.CheckMaxInitCodeSize(&rules, uint64(len(msg.Data))); err != nil {
+				return nil, err
+			}
 		}
 	}
 
