@@ -557,19 +557,17 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 	// - the storage is non-empty
 	contractHash := evm.StateDB.GetCodeHash(address)
 	storageRoot := evm.StateDB.GetStorageRoot(address)
-	if evm.Config.CreateAddressOverride != nil {
-		goto ignoreContractAddressCollision
-	}
-	if evm.StateDB.GetNonce(address) != 0 ||
-		(contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash) || // non-empty code
-		(storageRoot != (common.Hash{}) && storageRoot != types.EmptyRootHash) { // non-empty storage
-		if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
-			evm.Config.Tracer.OnGasChange(gas, 0, tracing.GasChangeCallFailedExecution)
+	if evm.Config.CreateAddressOverride == nil {
+		if evm.StateDB.GetNonce(address) != 0 ||
+			(contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash) || // non-empty code
+			(storageRoot != (common.Hash{}) && storageRoot != types.EmptyRootHash) { // non-empty storage
+			if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
+				evm.Config.Tracer.OnGasChange(gas, 0, tracing.GasChangeCallFailedExecution)
+			}
+			return nil, common.Address{}, 0, ErrContractAddressCollision
 		}
-		return nil, common.Address{}, 0, ErrContractAddressCollision
 	}
 
-ignoreContractAddressCollision:
 	// Create a new account on the state only if the object was not present.
 	// It might be possible the contract code is deployed to a pre-existent
 	// account with non-zero balance.
@@ -626,16 +624,13 @@ func (evm *EVM) initNewContract(contract *Contract, address common.Address) ([]b
 		return ret, err
 	}
 
-	if evm.Config.IgnoreGas {
-		goto ignoreGas
+	if !evm.Config.IgnoreGas {
+		// Check whether the max code size has been exceeded, assign err if the case.
+		if err := CheckMaxCodeSize(&evm.chainRules, uint64(len(ret))); err != nil {
+			return ret, err
+		}
 	}
 
-	// Check whether the max code size has been exceeded, assign err if the case.
-	if err := CheckMaxCodeSize(&evm.chainRules, uint64(len(ret))); err != nil {
-		return ret, err
-	}
-
-ignoreGas:
 	// Reject code starting with 0xEF if EIP-3541 is enabled.
 	if len(ret) >= 1 && ret[0] == 0xEF && evm.chainRules.IsLondon {
 		return ret, ErrInvalidCode

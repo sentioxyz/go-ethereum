@@ -449,31 +449,28 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 
 	// Check clauses 4-5, subtract intrinsic gas if everything is correct
 	gas, err := IntrinsicGas(msg.Data, msg.AccessList, msg.SetCodeAuthorizations, contractCreation, rules.IsHomestead, rules.IsIstanbul, rules.IsShanghai)
-	if st.evm.Config.IgnoreGas {
-		goto ignoreGas
-	}
-	if err != nil {
-		return nil, err
-	}
-	if st.gasRemaining < gas {
-		return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gasRemaining, gas)
-	}
-	// Gas limit suffices for the floor data cost (EIP-7623)
-	if rules.IsPrague {
-		floorDataGas, err = FloorDataGas(msg.Data)
+	if !st.evm.Config.IgnoreGas {
 		if err != nil {
 			return nil, err
 		}
-		if msg.GasLimit < floorDataGas {
-			return nil, fmt.Errorf("%w: have %d, want %d", ErrFloorDataGas, msg.GasLimit, floorDataGas)
+		if st.gasRemaining < gas {
+			return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gasRemaining, gas)
 		}
+		// Gas limit suffices for the floor data cost (EIP-7623)
+		if rules.IsPrague {
+			floorDataGas, err = FloorDataGas(msg.Data)
+			if err != nil {
+				return nil, err
+			}
+			if msg.GasLimit < floorDataGas {
+				return nil, fmt.Errorf("%w: have %d, want %d", ErrFloorDataGas, msg.GasLimit, floorDataGas)
+			}
+		}
+		if t := st.evm.Config.Tracer; t != nil && t.OnGasChange != nil {
+			t.OnGasChange(st.gasRemaining, st.gasRemaining-gas, tracing.GasChangeTxIntrinsicGas)
+		}
+		st.gasRemaining -= gas
 	}
-	if t := st.evm.Config.Tracer; t != nil && t.OnGasChange != nil {
-		t.OnGasChange(st.gasRemaining, st.gasRemaining-gas, tracing.GasChangeTxIntrinsicGas)
-	}
-	st.gasRemaining -= gas
-
-ignoreGas:
 
 	if rules.IsEIP4762 {
 		st.evm.AccessEvents.AddTxOrigin(msg.From)
@@ -492,17 +489,15 @@ ignoreGas:
 		return nil, fmt.Errorf("%w: address %v", ErrInsufficientFundsForTransfer, msg.From.Hex())
 	}
 
-	if st.evm.Config.IgnoreCodeSizeLimit {
-		goto ignoreCodeSizeLimit
-	}
-	// Check whether the init code size has been exceeded.
-	if contractCreation {
-		if err := vm.CheckMaxInitCodeSize(&rules, uint64(len(msg.Data))); err != nil {
-			return nil, err
+	if !st.evm.Config.IgnoreCodeSizeLimit {
+		// Check whether the init code size has been exceeded.
+		if contractCreation {
+			if err := vm.CheckMaxInitCodeSize(&rules, uint64(len(msg.Data))); err != nil {
+				return nil, err
+			}
 		}
 	}
 
-ignoreCodeSizeLimit:
 	// Execute the preparatory steps for state transition which includes:
 	// - prepare accessList(post-berlin)
 	// - reset transient storage(eip 1153)
