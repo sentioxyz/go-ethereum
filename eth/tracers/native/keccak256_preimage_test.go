@@ -64,6 +64,7 @@ func (m *mockOpContext) CallInput() []byte {
 	return []byte{}
 }
 
+func (m *mockOpContext) CodeAddress() common.Address { return common.Address{} }
 func (m *mockOpContext) ContractCode() []byte {
 	return []byte{}
 }
