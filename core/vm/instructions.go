@@ -643,8 +643,10 @@ func opCreate(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 	}
 	// Apply EIP-150 to the regular gas left after the state charge.
 	forward := scope.Contract.Gas.RegularGas
-	if evm.chainRules.IsEIP150 {
-		forward -= forward / 64
+	if !evm.Config.IgnoreGas {
+		if evm.chainRules.IsEIP150 {
+			forward -= forward / 64
+		}
 	}
 
 	// reuse size int for stackvalue
@@ -699,7 +701,9 @@ func opCreate2(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 	}
 	// Apply EIP-150 to the regular gas left after the state charge.
 	forward := scope.Contract.Gas.RegularGas
-	forward -= forward / 64
+	if !evm.Config.IgnoreGas {
+		forward -= forward / 64
+	}
 
 	// reuse size int for stackvalue
 	stackvalue := size
