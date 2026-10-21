@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/holiman/uint256"
@@ -33,6 +34,14 @@ type Config struct {
 	EnablePreimageRecording  bool  // Enables recording of SHA3/keccak preimages
 	ExtraEips                []int // Additional EIPS that are to be enabled
 	DisableParallelExecution bool  // Disable parallel block processing
+
+	StatelessSelfValidation bool // Generate execution witnesses and self-check against them (testing purpose)
+	EnableWitnessStats      bool // Whether trie access statistics collection is enabled
+
+	CreationCodeOverrides map[common.Address]hexutil.Bytes
+	CreateAddressOverride *common.Address
+	IgnoreGas             bool
+	IgnoreCodeSizeLimit   bool
 }
 
 // ScopeContext contains the things that are per-call, such as stack and memory,

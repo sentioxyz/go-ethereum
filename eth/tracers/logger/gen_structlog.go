@@ -29,6 +29,7 @@ func (s StructLog) MarshalJSON() ([]byte, error) {
 		Depth         int                         `json:"depth"`
 		RefundCounter uint64                      `json:"refund"`
 		Err           error                       `json:"-"`
+		Meq           *int                        `json:"meq,omitempty"`
 		OpName        string                      `json:"opName"`
 		ErrorString   string                      `json:"error,omitempty"`
 	}
@@ -50,6 +51,7 @@ func (s StructLog) MarshalJSON() ([]byte, error) {
 	enc.Depth = s.Depth
 	enc.RefundCounter = s.RefundCounter
 	enc.Err = s.Err
+	enc.Meq = s.Meq
 	enc.OpName = s.OpName()
 	enc.ErrorString = s.ErrorString()
 	return json.Marshal(&enc)
@@ -70,6 +72,7 @@ func (s *StructLog) UnmarshalJSON(input []byte) error {
 		Depth         *int                        `json:"depth"`
 		RefundCounter *uint64                     `json:"refund"`
 		Err           error                       `json:"-"`
+		Meq           *int                        `json:"meq,omitempty"`
 	}
 	var dec StructLog
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -113,6 +116,9 @@ func (s *StructLog) UnmarshalJSON(input []byte) error {
 	}
 	if dec.Err != nil {
 		s.Err = dec.Err
+	}
+	if dec.Meq != nil {
+		s.Meq = dec.Meq
 	}
 	return nil
 }
